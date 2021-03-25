@@ -19,3 +19,4 @@ int main() {
     sp->tm_year, sp->tm_hour, sp->tm_min, tzname[sp->tm_isdst]);
 
   exit(0);
+}
