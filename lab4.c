@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+const int BUFSIZ = 2;
+
 struct node {
     char *value;
     struct node* next;
