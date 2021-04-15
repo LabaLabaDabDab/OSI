@@ -1,83 +1,55 @@
-#include <stdio.h>
+#include <sys/types.h>
 #include <fcntl.h>
-#include <zconf.h>
-#include <malloc.h>
+#include <unistd.h>
 #include <stdlib.h>
-#include <errno.h>
+#include <stdio.h>
+#include <string.h>
 
-int main() {
-    int file;
-    if ((file = open("crusoe", O_RDONLY)) == -1) {
-        perror("Can't open file");
-        return 1;
-    }
+int main(int argc, char *argv[]) {
+     long fileOffsets[101];
+     int fd = 0, i = 1, j = 0, lineNumber = 0, lineLength[101] = { -1 };
+     char c = 0;
+     char *buf = (char*)malloc (sizeof(char) * 257);
+     int bufSize = 257;
+     static char err_msg[32] = "Input file doesn`t exist -  ";
+     if (argc < 2) {
+         perror("Usage: filename as argument");
+         exit(2);
+     }
+     if((fd = open(argv[1], O_RDONLY)) == -1) {
+         perror(strcat(err_msg, argv[1]));
+         exit(1);
+     }
+     fileOffsets[0] = 0L;
+     fileOffsets[1] = 0L;
+     while(read(fd, &c, 1)){
+         if(c == '\n') {
+             j++;
+             lineLength[i++] = j;
+             fileOffsets[i] = lseek(fd, 0L, SEEK_CUR);
+             j = 0;
+         }
+         else
+             j++;
+     }
 
-    int str_cnt = 0;
-
-    char* c = (char*) malloc(sizeof(char));
-
-    while (read(file, c, 1) != 0) {
-        if (*c == '\n') {
-            str_cnt++;
-        }
-    }
-    printf("%d\n", str_cnt);
-
-    int break_indexes[str_cnt + 1];
-    int str_lens[str_cnt];
-    break_indexes[0] = -1;
-
-    lseek(file, 0, 0);
-
-    int cur_str = 1;
-    int cur_pos = 0;
-
-    while (read(file, c, 1) != 0) {
-        if (*c == '\n') {
-            break_indexes[cur_str] = cur_pos;
-            str_lens[cur_str - 1] = break_indexes[cur_str] - break_indexes[cur_str - 1] - 1;
-            cur_str++;
-        }
-        cur_pos++;
-    }
-
-    /*for (int i = 0; i < str_cnt; ++i) {
-        printf("%d ", str_lens[i]);
-    }
-    printf("\n");*/
-
-    char* end;
-    char* input = (char*) malloc(30 * sizeof(char));
-
-    if (scanf("%s", input) == -1) {
-        exit(1);
-    }
-
-    int query = strtol(input, &end, 10);
-
-    while (query != 0 || end == input) {
-        if (query < 0 || query > str_cnt || end == input) {
-            fprintf(stderr, "Wrong input\n");
-            scanf("%s", input);
-            query = strtol(input, &end, 10);
-            continue;
-        }
-
-        query--;
-        lseek(file, break_indexes[query] + 1, 0);
-
-        char* buf = malloc(str_lens[query] * sizeof(char) + 1);
-        read(file, buf, str_lens[query]);
-        *(buf + str_lens[query]) = '\0';
-        printf("%s\n", buf);
-        free(buf);
-
-        if (scanf("%s", input) == -1) {
-            exit(1);
-        }
-        query = strtol(input, &end, 10);
-    }
-
-    close(file);
-    return 0;
-}
+     while(printf("enter line number : ") && scanf("%d", &lineNumber)) {
+         if(lineNumber == 0)
+             exit(0);
+         if(lineNumber < 0 || lineNumber > 100 || (lineLength[lineNumber] == -1)) {
+	     fprintf(stderr, "wrong line number \n");
+             continue;
+         }
+	 lseek(fd, fileOffsets[lineNumber], SEEK_SET);
+	 if (lineLength[lineNumber] > bufSize) {
+	     realloc (buf, lineLength[lineNumber] * sizeof(char));
+             bufSize = lineLength[lineNumber];
+         } 
+         if(read(fd, buf, lineLength[lineNumber]))
+             write(1, buf, lineLength[lineNumber]);
+         else
+             fprintf(stderr, "wrong line number\n");
+     }
+     free(buf);
+     return 0;
+ }
