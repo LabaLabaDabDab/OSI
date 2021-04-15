@@ -2,8 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 
-const int BUFSIZE = 2;
-
 struct node {
     char *value;
     struct node* next;
@@ -42,7 +40,7 @@ struct node *addString(char *newLine){
 
 
 int main(){
-    char line[BUFSIZE];
+    char line[BUFSIZ];
     struct node *head = NULL,
             *currentNode = NULL,
             *i = NULL;
