@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-const int BUFSIZ = 2;
+const int BUFSIZE = 2;
 
 struct node {
     char *value;
@@ -42,7 +42,7 @@ struct node *addString(char *newLine){
 
 
 int main(){
-    char line[BUFSIZ];
+    char line[BUFSIZE];
     struct node *head = NULL,
             *currentNode = NULL,
             *i = NULL;
