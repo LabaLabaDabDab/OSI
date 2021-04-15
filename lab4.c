@@ -11,6 +11,9 @@ struct node {
 
 struct node *nodeInit(){
     struct node *head = (struct node*)malloc(sizeof(struct node));
+    if (head == NULL){
+        exit(1);
+    }
     head->next = NULL;
     head->value = NULL;
     return head;
@@ -25,7 +28,13 @@ void freeNode(struct node* currentNode){
 struct node *addString(char *newLine){
     struct node *newNode = NULL;
     newNode = (struct node *)malloc(sizeof(struct node));
+    if (newNode == NULL){
+        exit(1);
+    }
     newNode->value = (char *)malloc(strlen(newLine) + 1);
+    if (newNode->value == NULL){
+        exit(1);
+    }
     strcpy(newNode->value, newLine);
     newNode->next = NULL;
     return(newNode);
