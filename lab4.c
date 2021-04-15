@@ -50,7 +50,6 @@ int main(){
     head = nodeInit();
     currentNode = head;
 
-    printf("Enter lines of text. To end entering, put '.' in the start of line.\n");
     while (gets(line) != NULL) {
         if (line[0] == '.')
             break;
