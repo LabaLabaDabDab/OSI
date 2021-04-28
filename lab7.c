@@ -1,115 +1,126 @@
+#include <sys/types.h>
+#include <sys/time.h>
 #include <stdio.h>
 #include <fcntl.h>
-#include <zconf.h>
+#include <unistd.h>
 #include <stdlib.h>
-#include <signal.h>
+#include <string.h>
 #include <sys/mman.h>
+#include <errno.h>
 
-int file;
-char* buf;
+#define BUFSIZE 10
 
-void print_file (int sig) {
-    for (int i = 0; *(buf + i) != '\0'; ++i) {
-        printf("%c", *(buf + i));
+void closeFile(int *fd){
+    if(close(*fd)==-1){
+        if(errno==EINTR){
+            if(close(*fd)==-1&&errno!=EINTR){;
+                printf("Error close file");
+            }
+        }else{
+            printf("Error close file");
+        }
     }
-    exit(0);
 }
 
-int time_scan (int sec, char* input) {
-    signal(SIGALRM, print_file);
-    alarm(sec);
-    int res = scanf("%s", input);
-    alarm(0);
-    return res;
+int writeConsole(char buf[],int whence){
+	if(write(1,buf,whence)==-1){
+		if(errno==EINTR){
+			if(write(1,buf,whence)==-1&&errno!=EINTR){
+				printf("Error write");
+				return 1;
+			}
+		}else{
+			printf("Error write");
+			return 1;
+		}
+	}
+	return 0;
 }
 
-int main() {
-    if ((file = open("crusoe", O_RDONLY)) == -1) {
-        perror("Can't open file");
-        return 1;
-    }
+int readFile(int *fd,char *buf,int size_buf){
+    int count;
+	if((count=read(*fd,buf,size_buf))==-1){
+		if(errno==EINTR){
+			if((count=read(*fd,buf,size_buf))==-1&&errno!=EINTR){
+				printf("Error read");
+				return -1;
+			}
+		}else{
+			printf("Error read");
+			return -1;
+		}
+	}
+	return count;
+}
 
-    int str_cnt = 0;
+int main(int argc, char *argv[]){
+	 struct timeval tv;
+	 tv.tv_sec=5;
+	 tv.tv_usec=0;
+     char *displ[501];
+     char *p,*f, buf[10];
+     int fd1, fd2, count, i = 1, j = 1, line_no, line_ln[500]={0};
+     off_t size;
 
-    int off = 0;
-    int count_of_pages = 0;
+     if ((fd1 = open("/dev/tty", O_RDONLY | O_NDELAY)) == -1) {
+         printf("Error,file open console");
+         return 0;
+     }
 
-    int end_of_file = 0;
-    while (!end_of_file) {
-        char* c = (char*) mmap(0, getpagesize(), PROT_READ, MAP_PRIVATE, file, off);
-        count_of_pages++;
-        for (int i = 0; i < getpagesize(); ++i) {
-            if (*(c + i) == '\0') {
-                end_of_file = 1;
-                break;
-            }
-            if (*(c + i) == '\n') {
-                str_cnt++;
-            }
-            //printf("%c", *(c + i));
-        }
-        off += getpagesize();
-    }
+     if ((fd2 = open(argv[1], O_RDONLY)) == -1) {
+         printf("File open error,name %s",argv[1]);
+		 closeFile(&fd1);
+         return 0;
+         }
 
-    int break_indexes[str_cnt + 1];
-    int str_lens[str_cnt];
-    break_indexes[0] = -1;
+     size = lseek(fd2, 0, SEEK_END);
+	 if(size==-1){
+		 closeFile(&fd1);
+		 closeFile(&fd2);
+		 return 0;
+	 }
+     if((p = mmap(0, size, PROT_READ, MAP_SHARED, fd2, 0))==MAP_FAILED){
+		 printf("Error mmap");
+		 closeFile(&fd1);
+		 closeFile(&fd2);
+		 return 0;
+	 }
+     displ[1] = p;
+     for(count = 0; count < size; count++)
+         if( *(p+count) == '\n' ) {
+             line_ln[i++] = j;
+             displ[i] = count+p+1;
+             j = 1;
+             }
+         else
+             j++;
 
-    printf("%d\n", str_cnt);
-
-    buf = (char*) mmap(0, count_of_pages * getpagesize(), PROT_READ, MAP_PRIVATE, file, 0);
-
-    int cur_str = 1;
-
-    for (int i = 0; *(buf + i) != '\0'; ++i) {
-        if (*(buf + i) == '\n') {
-            break_indexes[cur_str] = i;
-            str_lens[cur_str - 1] = break_indexes[cur_str] - break_indexes[cur_str - 1] - 1;
-            cur_str++;
-        }
-    }
-
-    char* end;
-    char* input = (char*) malloc(30 * sizeof(char));
-
-    int res = time_scan(5, input);
-
-    if (res == EOF) {
-        printf("Don't press Ctrl+D, mudila!\n");
-        exit(1);
-    }
-
-    int query = strtol(input, &end, 10);
-
-    while (query != 0 || end == input) {
-        if (query < 0 || query > str_cnt || end == input) {
-            fprintf(stderr, "Wrong input\n");
-            int res = time_scan(5, input);
-            if (res == EOF) {
-                printf("Don't press Ctrl+D, mudila!\n");
-                exit(1);
-            }
-            query = strtol(input, &end, 10);
-            continue;
-        }
-
-        query--;
-
-        for (int i = 0; i < str_lens[query]; ++i) {
-            printf("%c", *(buf +  break_indexes[query] + i + 1));
-        }
-        printf("\n");
-
-        int res = time_scan(5, input);
-
-        if (res == EOF) {
-            printf("Don't press Ctrl+D, mudila!\n");
-            exit(1);
-        }
-
-        query = strtol(input, &end, 10);
-    }
-
-    close(file);
-    return 0;
+     displ[i] = 0;
+     while(1){
+         printf("you have 5 seconds to enter a line number\n");
+         if(!select(1,&fd1,NULL,NULL,&tv)){
+			 writeConsole(p,size);
+             break;
+		 }
+         else {
+			 i = readFile(&fd1,&buf,BUFSIZE);
+			 if(i==-1){
+				 break;
+			 }
+             buf[i] = '\0';
+             line_no = atoi(buf);
+             if(line_no <= 0){
+                 break;
+			 }
+             if(displ[line_no] != 0)
+                 writeConsole(displ[line_no],line_ln[line_no]);
+             else
+                 printf("Bad Line Number\n");
+         }
+     }
+	 if(!mummap(p,size)){
+		 printf("Error mummap");
+	 }
+	 closeFile(&fd1);
+	 closeFile(&fd2);
 }
