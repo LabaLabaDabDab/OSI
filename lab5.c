@@ -4,52 +4,102 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
-int main(int argc, char *argv[]) {
-     long fileOffsets[101];
-     int fd = 0, i = 1, j = 0, lineNumber = 0, lineLength[101] = { -1 };
-     char c = 0;
-     char *buf = (char*)malloc (sizeof(char) * 257);
-     int bufSize = 257;
-     static char err_msg[32] = "Input file doesn`t exist -  ";
-     if (argc < 2) {
-         perror("Usage: filename as argument");
-         exit(2);
+#define BUFSIZE_C 100
+
+void closeFile(int *fd){
+    if(close(*fd)==-1){
+        if(errno==EINTR){
+            if(close(*fd)==-1&&errno!=EINTR){;
+                printf("Error close file");
+            }
+        }else{
+            printf("Error close file");
+        }
+    }
+}
+
+int writeConsole(char buf[],int whence){
+	if(write(1,buf,whence)==-1){
+		if(errno==EINTR){
+			if(write(1,buf,whence)==-1&&errno!=EINTR){
+				printf("Error write");
+				return 1;
+			}
+		}else{
+			printf("Error write");
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int readFile(int *fd,char *buf,int size_buf){
+    int count;
+	if((count=read(*fd,buf,size_buf))==-1){
+		if(errno==EINTR){
+			if((count=read(*fd,buf,size_buf))==-1&&errno!=EINTR){
+				printf("Error read");
+				return -1;
+			}
+		}else{
+			printf("Error read");
+			return -1;
+		}
+	}
+	return count;
+}
+
+int main(int argc, char *argv[]){
+     int fd;
+     long displ[500]={0};
+     int countAll=1;
+     int i = 1, j = 0, line_no, line_ln[500]={0};
+     char c[BUFSIZE_C], buf[257];
+     if(( fd =  open(argv[1], O_RDONLY)) == -1){
+         printf("No find file- %s",argv[1]);
+         return 1;
      }
-     if((fd = open(argv[1], O_RDONLY)) == -1) {
-         perror(strcat(err_msg, argv[1]));
-         exit(1);
+	 int count;
+     while(count=readFile(&fd,&c,BUFSIZE_C)){
+		 for(int k=0;k<count;k++){
+             if( c[k] == '\n') {
+                 j++;
+                 line_ln[i++] = j;
+                 displ[i] = countAll;
+                 j = 0;
+             }
+             else
+                 if(c[k]!='\0'){
+                 j++;
+                 }
+             if(c[k]!='\0'){
+                countAll++;
+             }
+		 }
      }
-     fileOffsets[0] = 0L;
-     fileOffsets[1] = 0L;
-     while(read(fd, &c, 1)){
-         if(c == '\n') {
-             j++;
-             lineLength[i++] = j;
-             fileOffsets[i] = lseek(fd, 0L, SEEK_CUR);
-             j = 0;
+     if(count==-1){
+        closeFile(&fd);
+        return 0;
+     }
+     while( printf("Line number : ") && scanf("%d", &line_no)) {
+         if(line_no <= 0)
+             break;
+         if(lseek(fd, displ[line_no], 0)==-1){
+			 break;
+		 }
+         if(count=readFile(&fd,&buf,line_ln[line_no])){
+            if(writeConsole(buf,line_ln[line_no])){
+				break;
+			}
          }
          else
-             j++;
-     }
-
-     while(printf("enter line number : ") && scanf("%d", &lineNumber)) {
-         if(lineNumber == 0)
-             exit(0);
-         if(lineNumber < 0 || lineNumber > 100 || (lineLength[lineNumber] == -1)) {
-	     fprintf(stderr, "wrong line number \n");
-             continue;
+            if(count==0){
+              printf("Bad Line Number\n");
+            }else{
+                break;
+            }
          }
-	 lseek(fd, fileOffsets[lineNumber], SEEK_SET);
-	 if (lineLength[lineNumber] > bufSize) {
-	     realloc (buf, lineLength[lineNumber] * sizeof(char));
-             bufSize = lineLength[lineNumber];
-         } 
-         if(read(fd, buf, lineLength[lineNumber]))
-             write(1, buf, lineLength[lineNumber]);
-         else
-             fprintf(stderr, "wrong line number\n");
-     }
-     free(buf);
-     return 0;
- }
+     closeFile(&fd);
+}
