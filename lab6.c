@@ -78,7 +78,7 @@ int main(int argc, char *argv[]){
 	 int maxfdid;
 	 if(fd1>fd2){
 		 maxfdid=fd1;
-	 }ekse{
+	 }else{
 		 maxfdid=fd2;
 	 }
 	 int count;
