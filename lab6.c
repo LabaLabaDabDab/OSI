@@ -1,81 +1,149 @@
+#include <sys/types.h>
+#include <sys/time.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/time.h>
- 
-#define BUFSIZE 257
-#define NOT_TIMEOUT 1
+#include <errno.h>
 
- 
-int main(int argc, char *argv[])
- {
-      struct timeval currentTime;      
-      long fileOffsets[101];
-      int fd1, fd2, i = 1, j = 0, lineNumber, lineLength[101] = { -1 };
-      char c;
-      char *buf = (char*)malloc (sizeof(char) * 257);
-      int bufSize = 257;
-      static char err_msg[32] = "Input file - ";
- 
-      if ((fd1 = open("/dev/tty", O_RDONLY | O_NDELAY)) == -1) {
-          perror("/dev/tty");
-          exit(1);
-      }
- 
-      if ((fd2 = open(argv[1], O_RDONLY)) == -1) {
-          perror(strcat(err_msg, argv[1]));
-          exit(1);
-          }
- 
-      fileOffsets[1] = 0L;
-      while(read(fd2, &c, 1)){
-          if( c == '\n' ) {
-              j++;
-              lineLength[i++] = j;
-              fileOffsets[i] = lseek(fd2, 0L, 1);
-              j = 0;
-              }
-          else
-              j++;
-	}
-	printf("five seconds to write a line number\n");
-	int timeCountedFrom = 0;
-	gettimeofday(&currentTime, NULL);
-	timeCountedFrom = currentTime.tv_sec;
-	while (NOT_TIMEOUT) {
-		gettimeofday(&currentTime, NULL);
-		if((currentTime.tv_sec - timeCountedFrom) >= 5){
-			lseek(fd2, 0, SEEK_SET);
-             		while((i = read(fd2, buf, BUFSIZE)) > 0)
-             			write(1, buf, i);
-			break; 
-		}
-		if ((i = read (fd1, buf, BUFSIZE)) != 0) {
-			buf[i] = '\0'; 
-			lineNumber = atoi(buf);
-			if(lineNumber == 0)
-				exit(0);
-			if(lineNumber < 0 || lineNumber > 100 || lineLength[lineNumber] == -1){
-				fprintf(stderr, "wrong line number\n");
-				continue;
+#define BUFSIZE 257
+#define BUFSUZE_C 100
+
+void closeFile(int *fd){
+    if(close(*fd)==-1){
+        if(errno==EINTR){
+            if(close(*fd)==-1&&errno!=EINTR){;
+                printf("Error close file");
+            }
+        }else{
+            printf("Error close file");
+        }
+    }
+}
+
+
+
+int writeConsole(char *buf,int whence){
+	if(write(1,buf,whence)==-1){
+		if(errno==EINTR){
+			if(write(1,buf,whence)==-1&&errno!=EINTR){
+				printf("Error write");
+				return 1;
 			}
-			lseek(fd2, fileOffsets[lineNumber], SEEK_SET);
-			if (lineLength[lineNumber] > bufSize) {
-				realloc(buf, lineLength[lineNumber] * sizeof(char));
-				bufSize = lineLength[lineNumber];
-			}
-			if(read(fd2, buf, lineLength[lineNumber]) > 0){
-				write(1, buf, lineLength[lineNumber]);
-			}
-			else {
-				fprintf(stderr, "wrong line number\n");
-			}
-			gettimeofday(&currentTime, NULL);
-			timeCountedFrom = currentTime.tv_sec;
+		}else{
+			printf("Error write");
+			return 1;
 		}
 	}
-      return 0;
+	return 0;
+}
+
+int readFile(int *fd,char *buf,int size_buf){
+    int count;
+	if((count=read(*fd,buf,size_buf))==-1){
+		if(errno==EINTR){
+			if((count=read(*fd,buf,size_buf))==-1&&errno!=EINTR){
+				printf("Error read");
+				return -1;
+			}
+		}else{
+			printf("Error read");
+			return -1;
+		}
+	}
+	return count;
+}
+
+int main(int argc, char *argv[]){
+	 struct timeval tv;
+	 tv.tv_sec=5;
+	 tv.tv_usec=0;
+     long displ[500]={0};
+	 int countAll=1;
+     int fd1, fd2, i = 1, j = 0, line_no, line_ln[500]={0};
+     char c[BUFSUZE_C], buf[BUFSIZE];
+
+     if ((fd1 = open("/dev/tty", O_RDONLY | O_NDELAY)) == -1) {
+         printf("Error,open file console");
+         return 1;
+     }
+
+     if ((fd2 = open(argv[1], O_RDONLY)) == -1) {
+         printf("Error open -",argv[1]);
+		 closeFile(&fd1);
+         return 1;
+     }
+	 int maxfdid;
+	 if(fd1>fd2){
+		 maxfdid=fd1;
+	 }ekse{
+		 maxfdid=fd2;
+	 }
+	 int count;
+     while(count=readFile(&fd2,&c,BUFSUZE_C))
+		for(int k=0;k<count;k++){
+			 if( c[k] == '\n' ) {
+				 j++;
+				 line_ln[i++] = j;
+				 displ[i] = countAll;
+				 j = 0;
+			 }
+			 else
+				 if(c[k]!='\0'){
+					j++;
+				 }
+			 if(c[k]!='\0'){
+			 countAll++;
+			 }
+		}
+		
+	 if(count==-1){
+        closeFile(&fd1);
+		closeFile(&fd2);
+        return 0;
+     }
+
+     while(1){
+         printf("you have 5 seconds to enter a line number\n");
+         if (!select(maxfdid+1,&fd1,NULL,NULL,&tv)) {
+             if(lseek(fd2, SEEK_SET, 0)==-1){
+				 break;
+			 }
+             while((i = readFile(&fd2,&buf,BUFSIZE)) > 0){
+                 if(writeConsole(buf,i)){
+					 break;
+				 }
+			 }
+			 break;
+         }
+         else {
+			 i = readFile(&fd1,&buf,BUFSIZE);
+			 if(i==-1){
+				 break;
+			 }
+             buf[i] = '\0';
+             line_no = atoi(buf);
+             if(line_no <= 0)
+                 break;
+			 if(lseek(fd2, displ[line_no], 0)==-1)
+				 break;
+             if(count=readFile(&fd2,&buf,line_ln[line_no])){
+                 if(writeConsole(buf,line_ln[line_no])){
+					 break;
+				 }
+			 }
+             else
+				 if(count==0){
+                 printf("Bad Line Number\n");
+				 }
+				 else{
+					 break;
+				 }
+         }
+     }
+	 closeFile(&fd1);
+	 closeFile(&fd2);
+	 return 0;
 }
