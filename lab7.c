@@ -1,126 +1,119 @@
 #include <sys/types.h>
-#include <sys/time.h>
-#include <stdio.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
-#include <sys/mman.h>
+#include <sys/time.h>
 #include <errno.h>
 
-#define BUFSIZE 10
+#define N 100
+#define True 1
 
-void closeFile(int *fd){
-    if(close(*fd)==-1){
-        if(errno==EINTR){
-            if(close(*fd)==-1&&errno!=EINTR){;
-                printf("Error close file");
-            }
-        }else{
-            printf("Error close file");
-        }
-    }
-}
+int main (int argc, char *argv[]) {
+	struct timeval tv1;
+	long fileOffsets[N] = {0};
+	int fileDescriptor;
+	int lineLength[N] = {-1};
 
-int writeConsole(char buf[],int whence){
-	if(write(1,buf,whence)==-1){
-		if(errno==EINTR){
-			if(write(1,buf,whence)==-1&&errno!=EINTR){
-				printf("Error write");
-				return 1;
-			}
-		}else{
-			printf("Error write");
-			return 1;
+	if ((fileDescriptor = open ("test.txt", O_RDONLY)) == -1) {
+		perror ("File doesn't open");
+		exit (1);
+	}
+
+	int fileSize = lseek (fileDescriptor, 0, SEEK_END);
+	char *p = mmap (0, fileSize, PROT_READ, MAP_SHARED, fileDescriptor, 0);
+	if (p == MAP_FAILED) {
+		perror ("Error mmap");
+		exit (1);
+	}
+
+	int i = 1, j = 1;
+	fileOffsets[1] = p;
+	for (int count = 0; count < fileSize; count++) {
+		if (*(p + count) == '\n') {
+			lineLength[i++] = j;
+			fileOffsets[i] = count + p + 1;
+			j = 1;
+		} else {
+			j++;
 		}
 	}
-	return 0;
-}
 
-int readFile(int *fd,char *buf,int size_buf){
-    int count;
-	if((count=read(*fd,buf,size_buf))==-1){
-		if(errno==EINTR){
-			if((count=read(*fd,buf,size_buf))==-1&&errno!=EINTR){
-				printf("Error read");
-				return -1;
+	fileOffsets[i] = 0;
+	int lineNumber = 0;
+	int retval;
+	tv1.tv_sec = 5;
+	tv1.tv_usec = 0;
+	fd_set readfds;
+	FD_ZERO(&readfds);
+	FD_SET(fileno (stdin), &readfds);
+	while (True) {
+		retval = select (fileno (stdin) + 1, &readfds, NULL, NULL, &tv1);
+		if (retval == 0) {
+			break;
+		} else if (retval == -1) {
+			fprintf (stderr, "Select error");
+			if (close (fileDescriptor) != 0) {
+				fprintf (stderr, "Cannot close file (descriptor=%d)\n",
+						 fileDescriptor);
 			}
-		}else{
-			printf("Error read");
-			return -1;
+			munmap (p, fileSize);
+			exit (1);
+		}
+		scanf ("%d", &lineNumber);
+		if (!lineNumber) {
+			if (close (fileDescriptor) != 0) {
+				fprintf (stderr, "Cannot close file (descriptor=%d)\n",
+						 fileDescriptor);
+				munmap (p, fileSize);
+				exit (1);
+			}
+			munmap (p, fileSize);
+			exit (0);
+		}
+
+		if (lineNumber < 0 || lineNumber > (N - 1) || (fileOffsets[lineNumber
+			+ 1] == 0)) {
+			fprintf (stderr, "wrong line number \n");
+			continue;
+		}
+
+		int w = -1;
+		while (w != lineLength[lineNumber]) {
+			w = write (STDOUT_FILENO, fileOffsets[lineNumber],
+					   lineLength[lineNumber]);
+			if (w == -1) {
+				if (errno == EAGAIN || errno == EINTR) {
+					continue;
+				} else {
+					w = lineLength[lineNumber];
+					fprintf (stderr, "Error write occurred\n");
+				}
+			}
 		}
 	}
-	return count;
-}
 
-int main(int argc, char *argv[]){
-	 struct timeval tv;
-	 tv.tv_sec=5;
-	 tv.tv_usec=0;
-     char *displ[501];
-     char *p,*f, buf[10];
-     int fd1, fd2, count, i = 1, j = 1, line_no, line_ln[500]={0};
-     off_t size;
+	int w = -1;
+	while (w != fileSize) {
+		w = write (STDOUT_FILENO, p, fileSize);
+		if (w == -1) {
+			if (errno == EAGAIN || errno == EINTR) {
+				continue;
+			} else {
+				w = lineLength[lineNumber];
+				fprintf (stderr, "Error write occurred\n");
+			}
+		}
+	}
 
-     if ((fd1 = open("/dev/tty", O_RDONLY | O_NDELAY)) == -1) {
-         printf("Error,file open console");
-         return 0;
-     }
-
-     if ((fd2 = open(argv[1], O_RDONLY)) == -1) {
-         printf("File open error,name %s",argv[1]);
-		 closeFile(&fd1);
-         return 0;
-         }
-
-     size = lseek(fd2, 0, SEEK_END);
-	 if(size==-1){
-		 closeFile(&fd1);
-		 closeFile(&fd2);
-		 return 0;
-	 }
-     if((p = mmap(0, size, PROT_READ, MAP_SHARED, fd2, 0))==MAP_FAILED){
-		 printf("Error mmap");
-		 closeFile(&fd1);
-		 closeFile(&fd2);
-		 return 0;
-	 }
-     displ[1] = p;
-     for(count = 0; count < size; count++)
-         if( *(p+count) == '\n' ) {
-             line_ln[i++] = j;
-             displ[i] = count+p+1;
-             j = 1;
-             }
-         else
-             j++;
-
-     displ[i] = 0;
-     while(1){
-         printf("you have 5 seconds to enter a line number\n");
-         if(!select(1,&fd1,NULL,NULL,&tv)){
-			 writeConsole(p,size);
-             break;
-		 }
-         else {
-			 i = readFile(&fd1,&buf,BUFSIZE);
-			 if(i==-1){
-				 break;
-			 }
-             buf[i] = '\0';
-             line_no = atoi(buf);
-             if(line_no <= 0){
-                 break;
-			 }
-             if(displ[line_no] != 0)
-                 writeConsole(displ[line_no],line_ln[line_no]);
-             else
-                 printf("Bad Line Number\n");
-         }
-     }
-	 if(!mummap(p,size)){
-		 printf("Error mummap");
-	 }
-	 closeFile(&fd1);
-	 closeFile(&fd2);
+	if (close (fileDescriptor) != 0) {
+		fprintf (stderr, "Cannot close file (descriptor=%d)\n",
+				 fileDescriptor);
+		munmap (p, fileSize);
+		exit (1);
+	}
+	munmap (p, fileSize);
+	exit (0);
 }
