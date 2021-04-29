@@ -1,149 +1,164 @@
 #include <sys/types.h>
-#include <sys/time.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/time.h>
 #include <errno.h>
 
-#define BUFSIZE 257
-#define BUFSUZE_C 100
+#define N 100
+#define True 1
 
-void closeFile(int *fd){
-    if(close(*fd)==-1){
-        if(errno==EINTR){
-            if(close(*fd)==-1&&errno!=EINTR){;
-                printf("Error close file");
-            }
-        }else{
-            printf("Error close file");
-        }
-    }
-}
+int main (int argc, char *argv[]) {
+	struct timeval tv1;
+	long fileOffsets[N] = {0};
+	int fileDescriptor;
+	int lineLength[N] = {-1};
+	int bufSize = 512;
+	char *buf = (char *)malloc (sizeof (char) * bufSize);
 
+	if (buf == NULL) {
+		perror ("Error memory allocation ");
+		exit (1);
+	}
+	if ((fileDescriptor = open ("test.txt", O_RDONLY)) == -1) {
+		perror ("File doesn't open");
+		free (buf);
+		exit (1);
+	}
 
-
-int writeConsole(char *buf,int whence){
-	if(write(1,buf,whence)==-1){
-		if(errno==EINTR){
-			if(write(1,buf,whence)==-1&&errno!=EINTR){
-				printf("Error write");
-				return 1;
+	int i = 1, j = 0;
+	int r = 1;
+	int oldFileOffsets = 0;
+	while (r) {
+		r = read(fileDescriptor, buf, bufSize);
+		if (r == -1) {
+			if (errno == EAGAIN || errno == EINTR) {
+				r = 1;
+			} else {
+				r = 0;
+				fprintf(stderr, "Error read occurred\n");
 			}
-		}else{
-			printf("Error write");
-			return 1;
+		}
+		for (int k = 0; k < r; ++k) {
+			++j;
+			if(buf[k] == '\n') {
+				lineLength[i] = j;
+				fileOffsets[++i] = j + oldFileOffsets;
+				oldFileOffsets += j;
+				j = 0;
+			}
 		}
 	}
-	return 0;
-}
-
-int readFile(int *fd,char *buf,int size_buf){
-    int count;
-	if((count=read(*fd,buf,size_buf))==-1){
-		if(errno==EINTR){
-			if((count=read(*fd,buf,size_buf))==-1&&errno!=EINTR){
-				printf("Error read");
-				return -1;
+	int lineNumber = 0;
+	int retval;
+	tv1.tv_sec = 5;
+	tv1.tv_usec = 0;
+	fd_set readfds;
+	FD_ZERO(&readfds);
+	FD_SET(fileno (stdin), &readfds);
+	while (True) {
+		retval = select (fileno (stdin) + 1, &readfds, NULL, NULL, &tv1);
+		if (retval == 0) {
+			break;
+		} else if (retval == -1) {
+			fprintf (stderr, "Select error");
+			free (buf);
+			if (close (fileDescriptor) != 0) {
+				fprintf (stderr, "Cannot close file (descriptor=%d)\n",
+						 fileDescriptor);
 			}
-		}else{
-			printf("Error read");
-			return -1;
+			exit (1);
+		}
+		scanf ("%d", &lineNumber);
+		if (!lineNumber) {
+			free (buf);
+			if (close (fileDescriptor) != 0) {
+				fprintf (stderr, "Cannot close file (descriptor=%d)\n",
+						 fileDescriptor);
+				exit (1);
+			}
+			exit (0);
+		}
+
+		if (lineNumber < 0 || lineNumber > (N - 1)|| (fileOffsets[lineNumber
+		+ 1] == 0)) {
+			fprintf (stderr, "wrong line number \n");
+			continue;
+		}
+
+		lseek (fileDescriptor, fileOffsets[lineNumber], SEEK_SET);
+		if (lineLength[lineNumber] > bufSize) {
+			if (realloc (buf, lineLength[lineNumber] * sizeof (char))
+				== NULL) {
+				perror ("Error memory allocation");
+				free (buf);
+				if (close (fileDescriptor) != 0) {
+					fprintf (stderr, "Cannot close file (descriptor=%d)\n",
+							 fileDescriptor);
+				}
+				exit (1);
+			}
+			bufSize = lineLength[lineNumber];
+		}
+
+		r = 1;
+		int w = -1;
+		while (r) {
+			r = read(fileDescriptor, buf, lineLength[lineNumber]);
+			if (r == -1) {
+				if (errno == EAGAIN || errno == EINTR) {
+					r = 1;
+				} else {
+					r = 0;
+					fprintf(stderr, "Error read occurred\n");
+				}
+			}
+			while (w != lineLength[lineNumber]) {
+				w = write (STDOUT_FILENO, buf, lineLength[lineNumber]);
+				if (w == -1) {
+					if (errno == EAGAIN || errno == EINTR) {
+						continue;
+					} else {
+						w = lineLength[lineNumber];
+						fprintf(stderr, "Error write occurred\n");
+					}
+				}
+			}
 		}
 	}
-	return count;
-}
-
-int main(int argc, char *argv[]){
-	 struct timeval tv;
-	 tv.tv_sec=5;
-	 tv.tv_usec=0;
-     long displ[500]={0};
-	 int countAll=1;
-     int fd1, fd2, i = 1, j = 0, line_no, line_ln[500]={0};
-     char c[BUFSUZE_C], buf[BUFSIZE];
-
-     if ((fd1 = open("/dev/tty", O_RDONLY | O_NDELAY)) == -1) {
-         printf("Error,open file console");
-         return 1;
-     }
-
-     if ((fd2 = open(argv[1], O_RDONLY)) == -1) {
-         printf("Error open -",argv[1]);
-		 closeFile(&fd1);
-         return 1;
-     }
-	 int maxfdid;
-	 if(fd1>fd2){
-		 maxfdid=fd1;
-	 }else{
-		 maxfdid=fd2;
-	 }
-	 int count;
-     while(count=readFile(&fd2,&c,BUFSUZE_C))
-		for(int k=0;k<count;k++){
-			 if( c[k] == '\n' ) {
-				 j++;
-				 line_ln[i++] = j;
-				 displ[i] = countAll;
-				 j = 0;
-			 }
-			 else
-				 if(c[k]!='\0'){
-					j++;
-				 }
-			 if(c[k]!='\0'){
-			 countAll++;
-			 }
+	lseek (fileDescriptor, 0, SEEK_SET);
+	r = 1;
+	while (r != 0) {
+		r = read(fileDescriptor, buf, bufSize);
+		if (r == -1) {
+			if (errno == EAGAIN || errno == EINTR) {
+				r = 1;
+			} else {
+				r = 0;
+				fprintf(stderr, "Error read occurred\n");
+			}
 		}
-		
-	 if(count==-1){
-        closeFile(&fd1);
-		closeFile(&fd2);
-        return 0;
-     }
+		int w = -1;
+		while (w != r) {
+			w = write (STDOUT_FILENO, buf, r);
+			if (w == -1) {
+				if (errno == EAGAIN || errno == EINTR) {
+					continue;
+				} else {
+					w = lineLength[lineNumber];
+					fprintf(stderr, "Error write occurred\n");
+				}
+			}
+		}
+	}
 
-     while(1){
-         printf("you have 5 seconds to enter a line number\n");
-         if (!select(maxfdid+1,&fd1,NULL,NULL,&tv)) {
-             if(lseek(fd2, SEEK_SET, 0)==-1){
-				 break;
-			 }
-             while((i = readFile(&fd2,&buf,BUFSIZE)) > 0){
-                 if(writeConsole(buf,i)){
-					 break;
-				 }
-			 }
-			 break;
-         }
-         else {
-			 i = readFile(&fd1,&buf,BUFSIZE);
-			 if(i==-1){
-				 break;
-			 }
-             buf[i] = '\0';
-             line_no = atoi(buf);
-             if(line_no <= 0)
-                 break;
-			 if(lseek(fd2, displ[line_no], 0)==-1)
-				 break;
-             if(count=readFile(&fd2,&buf,line_ln[line_no])){
-                 if(writeConsole(buf,line_ln[line_no])){
-					 break;
-				 }
-			 }
-             else
-				 if(count==0){
-                 printf("Bad Line Number\n");
-				 }
-				 else{
-					 break;
-				 }
-         }
-     }
-	 closeFile(&fd1);
-	 closeFile(&fd2);
-	 return 0;
+	free (buf);
+	if (close (fileDescriptor) != 0) {
+		fprintf (stderr, "Cannot close file (descriptor=%d)\n",
+				 fileDescriptor);
+		exit (1);
+	}
+	exit (0);
 }
