@@ -11,8 +11,7 @@
 #define DEFAULT_CAPACITY 100
 #define BUFF_SIZE 16
 
-typedef struct _IndentTable
-{
+typedef struct _IndentTable{
     size_t* arr;
     size_t size;
 } IndentTable;
