@@ -1,114 +1,92 @@
-#include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <string.h>
 #include <errno.h>
 
-#define N 100
+int read_file(int fileDescriptor, char* p, size_t size) {
+    int number = 0;
+    while(number == 0) {
+        number = read(fileDescriptor, p, size);
+        if (errno == EAGAIN || errno == EINTR) {
+            number = 0;
+        } else {
+            return number;
+        }
+    }
+}
 
-int main(int argc, char *argv[]) {
-	long fileOffsets[N] = {0};
-	int fileDescriptor;
-	int lineLength[N] = {-1};
-	int bufSize = 32;
-	char *buf = (char*)malloc (sizeof(char) * bufSize);
+int main() {
+    long fileOffsets[101];
+    int fileDescriptor;
+    int line_number = 0;
+    int line_length[101] = {-1};
+    int buffer_size = 257;
+    char* buffer = (char*)malloc(sizeof(char) * buffer_size);
 
-	if (buf == NULL) {
-		perror("Error memory allocation ");
-		exit(1);
-	}
+    if(!buffer) {
+        fprintf(stderr, "memory allocation error\n");
+        return 0;
+    }
 
-	if((fileDescriptor = open("test.txt", O_RDONLY)) == -1) {
-		perror("File doesn't open");
-		free (buf);
-		exit(1);
-	}
+    char* file = (char*)malloc(sizeof(char) * buffer_size);
 
-	int i = 1, j = 0;
-	int r = 1;
-	int oldFileOffsets = 0;
-	while (r) {
-		r = read(fileDescriptor, buf, bufSize);
-		if (r == -1) {
-			if (errno == EAGAIN || errno == EINTR) {
-				r = 1;
-			} else {
-				r = 0;
-				fprintf(stderr, "Error read occurred\n");
-			}
-		}
-		for (int k = 0; k < r; ++k) {
-			++j;
-			if(buf[k] == '\n') {
-				lineLength[i] = j;
-				fileOffsets[++i] = j + oldFileOffsets;
-				oldFileOffsets += j;
-				j = 0;
-			}
-		}
-	}
+    if (!file){
+        free(buffer);
+        fprintf(stderr, "memory allocation error \n");
+        return 0;
+    }
 
-	int lineNumber = 0;
-	printf("Enter line number: ");
-	while(scanf("%d", &lineNumber)) {
+    if ((fileDescriptor = open("test.txt", O_RDONLY)) == -1) {
+        fprintf(stderr, "File doesn't open \n");
+        free(buffer);
+        return 0;
+    }
+    fileOffsets[0] = 0;
+    fileOffsets[1] = 0;
+    int old_offset = 0, i = 1, j = 0;
+    int number = read_file(fileDescriptor, file, buffer_size);
 
-		if(!lineNumber) {
-			free(buf);
-			if (close (fileDescriptor) != 0) {
-				fprintf (stderr, "Cannot close file (descriptor=%d)\n", fileDescriptor);
-				exit (1);
-			}
-			exit (0);
-		}
+    for (int k = 0; k < number; ++k) {
+        j++;
+        if (file[k] == '\n') {
+            line_length[i] = j;
+            fileOffsets[++i] = j + old_offset;
+            old_offset += j;
+            j = 0;
+        }
+    }
 
-		if(lineNumber < 0 || lineNumber > (N - 1) || (fileOffsets[lineNumber
-			+ 1] == 0)) {
-			fprintf(stderr, "wrong line number \n");
-			printf("Enter line number: ");
-			continue;
-		}
+    while (1) {
+        printf("line number: ");
+        scanf("%d", &line_number);
 
-		lseek(fileDescriptor, fileOffsets[lineNumber], SEEK_SET);
-		if (lineLength[lineNumber] > bufSize) {
-			if (realloc (buf, lineLength[lineNumber] * sizeof(char)) == NULL) {
-				perror("Error memory allocation");
-				free (buf);
-				if (close (fileDescriptor) != 0) {
-					fprintf (stderr, "Cannot close file (descriptor=%d)\n", fileDescriptor);
-				}
-				exit(1);
-			}
-			bufSize = lineLength[lineNumber];
-		}
+        if (line_number == 0) {
+            break;
+        }
 
-		r = 1;
-		int w = -1;
-		while (r) {
-			r = read(fileDescriptor, buf, lineLength[lineNumber]);
-			if (r == -1) {
-				if (errno == EAGAIN || errno == EINTR) {
-					r = 1;
-				} else {
-					r = 0;
-					fprintf(stderr, "Error read occurred\n");
-				}
-			}
-			while (w != lineLength[lineNumber]) {
-				w = write (STDOUT_FILENO, buf, lineLength[lineNumber]);
-				if (w == -1) {
-					if (errno == EAGAIN || errno == EINTR) {
-						continue;
-					} else {
-						w = lineLength[lineNumber];
-						fprintf(stderr, "Error write occurred\n");
-					}
-				}
-			}
-		}
-		printf("Enter line number: ");
+        if (line_number < 0 || line_number > 100 || (line_length[line_number] == -1)) {
+            fprintf(stderr, "wrong line number \n");
+            continue;
+        }
 
-	}
-	return 0;
+        lseek(fileDescriptor, fileOffsets[line_number], SEEK_SET);
+
+        if (line_length[line_number] > buffer_size) {
+            realloc(buffer, line_length[line_number] * sizeof(char));
+            buffer_size = line_length[line_number];
+        }
+
+        if (read(fileDescriptor, buffer, line_length[line_number])) {
+            write(1, buffer, line_length[line_number]);
+        } else {
+            fprintf(stderr, "wrong line number\n");
+        }
+    }
+    free(buffer);
+
+    if (close(fileDescriptor) == -1) {
+        fprintf(stderr, "error with closing of session descriptor\n");
+    }
+    return 0;
 }
