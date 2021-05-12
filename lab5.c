@@ -1,92 +1,133 @@
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <fcntl.h>
+#include <stdlib.h>
 #include <errno.h>
+#include <stdbool.h>
+#include <string.h>
 
-int read_file(int fileDescriptor, char* p, size_t size) {
-    int number = 0;
-    while(number == 0) {
-        number = read(fileDescriptor, p, size);
-        if (errno == EAGAIN || errno == EINTR) {
-            number = 0;
-        } else {
-            return number;
+#define DEFAULT_CAPACITY 100
+#define BUFF_SIZE 16
+
+typedef struct _IndentTable
+{
+    size_t* arr;
+    size_t size;
+} IndentTable;
+
+
+bool initIndentTable(IndentTable* table){
+    table->arr = calloc(DEFAULT_CAPACITY, sizeof(size_t));
+    if(table->arr == NULL){
+        perror("Cannot allocate memory for indent array\n");
+        return false;
+    }
+
+    table->size = 0;
+    return true;
+}
+
+
+void pushIndent(IndentTable* table, size_t val){
+    table->arr[table->size] = val;
+    ++table->size;
+}
+
+bool fillIndentTable(IndentTable* table, int file){
+    char buff[BUFF_SIZE + 1];
+    size_t currPos = 0;
+    ssize_t readCount = 0;
+
+    while((readCount = read(file, buff, BUFF_SIZE)) != 0){
+        if(readCount == -1){
+            perror("Error in reading file\n");
+            return false;
         }
+
+        buff[readCount] = '\0';
+        char* endLinePos = buff;
+
+        while((endLinePos = strchr(endLinePos, '\n')) != NULL){
+            pushIndent(table, currPos + (endLinePos - buff));
+            ++endLinePos;
+        }
+
+        currPos += readCount;
+    }
+
+    return true;
+}
+
+void destroyIndentTable(IndentTable* table){
+    if(table->arr != NULL){
+        free(table->arr);
     }
 }
 
-int main() {
-    long fileOffsets[101];
-    int fileDescriptor;
-    int line_number = 0;
-    int line_length[101] = {-1};
-    int buffer_size = 257;
-    char* buffer = (char*)malloc(sizeof(char) * buffer_size);
+void printLine(int fildes, IndentTable* table, int lineNum){
+    --lineNum;
 
-    if(!buffer) {
-        fprintf(stderr, "memory allocation error\n");
-        return 0;
+    if(lineNum < 0 || lineNum >= table->size){
+        printf("No line with such number\n");
+        return;
     }
 
-    char* file = (char*)malloc(sizeof(char) * buffer_size);
+    size_t beginPos =  lineNum == 0
+                       ? 0
+                       : table->arr[lineNum-1] + 1; //+1 to get next pos after '\n'
+    size_t length = table->arr[lineNum] - beginPos + 1; //+1 to include '\n'
 
-    if (!file){
-        free(buffer);
-        fprintf(stderr, "memory allocation error \n");
-        return 0;
+    char* line = calloc(length + 1, sizeof(char))
+    if(line == NULL){
+        perror("Cannot allocate memory to printLine buffer\n");
+        return;
     }
 
-    if ((fileDescriptor = open("test.txt", O_RDONLY)) == -1) {
-        fprintf(stderr, "File doesn't open \n");
-        free(buffer);
-        return 0;
-    }
-    fileOffsets[0] = 0;
-    fileOffsets[1] = 0;
-    int old_offset = 0, i = 1, j = 0;
-    int number = read_file(fileDescriptor, file, buffer_size);
+    lseek(fildes, beginPos, SEEK_SET);
+    read(fildes, line, length);
+    printf("%s\n", line);
+    free(line);
+}
 
-    for (int k = 0; k < number; ++k) {
-        j++;
-        if (file[k] == '\n') {
-            line_length[i] = j;
-            fileOffsets[++i] = j + old_offset;
-            old_offset += j;
-            j = 0;
+int main(){
+    int file = open("text.txt", O_RDONLY);
+    if(file == -1){
+        perror("Cannot open file\n");
+        return -1;
+    }
+
+    IndentTable table;
+
+    if(!initIndentTable(&table)){
+        if(close(file)){
+            perror("Error in closing file");
         }
+        return -1;
     }
 
-    while (1) {
-        printf("line number: ");
-        scanf("%d", &line_number);
+    if(!fillIndentTable(&table, file)){
+        destroyIndentTable(&table);
+        if(close(file)){
+            perror("Error in closing file");
+        }
+        return -1;
+    }
 
-        if (line_number == 0) {
+    size_t lineNum;
+    
+    while(1){
+        printf("Type line num to read. Type 0 to exit: \n");
+        scanf("%ld", &lineNum);
+        if(lineNum == 0){
             break;
         }
-
-        if (line_number < 0 || line_number > 100 || (line_length[line_number] == -1)) {
-            fprintf(stderr, "wrong line number \n");
-            continue;
-        }
-
-        lseek(fileDescriptor, fileOffsets[line_number], SEEK_SET);
-
-        if (line_length[line_number] > buffer_size) {
-            realloc(buffer, line_length[line_number] * sizeof(char));
-            buffer_size = line_length[line_number];
-        }
-
-        if (read(fileDescriptor, buffer, line_length[line_number])) {
-            write(1, buffer, line_length[line_number]);
-        } else {
-            fprintf(stderr, "wrong line number\n");
-        }
+        printLine(file, &table, lineNum);
     }
-    free(buffer);
 
-    if (close(fileDescriptor) == -1) {
-        fprintf(stderr, "error with closing of session descriptor\n");
+    destroyIndentTable(&table);
+
+    if(close(file)){
+        perror("Error in closing file");
     }
+
     return 0;
 }
