@@ -1,119 +1,183 @@
-#include <sys/types.h>
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/time.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-#define N 100
-#define True 1
+#define DEFAULT_CAPACITY 100
 
-int main (int argc, char *argv[]) {
-	struct timeval tv1;
-	long fileOffsets[N] = {0};
-	int fileDescriptor;
-	int lineLength[N] = {-1};
+typedef struct _IndentTable{
+    size_t* arr;
+    size_t size;
+} IndentTable;
 
-	if ((fileDescriptor = open ("test.txt", O_RDONLY)) == -1) {
-		perror ("File doesn't open");
-		exit (1);
-	}
+bool initIndentTable(IndentTable* table){
+    table->arr = calloc(DEFAULT_CAPACITY, sizeof(size_t));
+    if(table->arr == NULL){
+        perror("Cannot allocate memory for indent array\n");
+        return false;
+    }
+    table->size = 0;
+    return true;
+}
 
-	int fileSize = lseek (fileDescriptor, 0, SEEK_END);
-	char *p = mmap (0, fileSize, PROT_READ, MAP_SHARED, fileDescriptor, 0);
-	if (p == MAP_FAILED) {
-		perror ("Error mmap");
-		exit (1);
-	}
+void pushIndent(IndentTable* table, size_t val){
+    table->arr[table->size] = val;
+    ++table->size;
+}
 
-	int i = 1, j = 1;
-	fileOffsets[1] = p;
-	for (int count = 0; count < fileSize; count++) {
-		if (*(p + count) == '\n') {
-			lineLength[i++] = j;
-			fileOffsets[i] = count + p + 1;
-			j = 1;
-		} else {
-			j++;
-		}
-	}
+char* buffMmap(int fildes, int* buffSize){
+    errno = 0;
+    struct stat fileSt;
+    while (fstat(fildes, &fileSt) != 0){
+        if(errno == EINTR){
+            errno = 0;
+            continue;
+        }
+        perror("Cannot obtain file state");
+        return NULL;
+    }
 
-	fileOffsets[i] = 0;
-	int lineNumber = 0;
-	int retval;
-	tv1.tv_sec = 5;
-	tv1.tv_usec = 0;
-	fd_set readfds;
-	FD_ZERO(&readfds);
-	FD_SET(fileno (stdin), &readfds);
-	while (True) {
-		retval = select (fileno (stdin) + 1, &readfds, NULL, NULL, &tv1);
-		if (retval == 0) {
-			break;
-		} else if (retval == -1) {
-			fprintf (stderr, "Select error");
-			if (close (fileDescriptor) != 0) {
-				fprintf (stderr, "Cannot close file (descriptor=%d)\n",
-						 fileDescriptor);
-			}
-			munmap (p, fileSize);
-			exit (1);
-		}
-		scanf ("%d", &lineNumber);
-		if (!lineNumber) {
-			if (close (fileDescriptor) != 0) {
-				fprintf (stderr, "Cannot close file (descriptor=%d)\n",
-						 fileDescriptor);
-				munmap (p, fileSize);
-				exit (1);
-			}
-			munmap (p, fileSize);
-			exit (0);
-		}
+    *buffSize = fileSt.st_size;
+    while (1){
+        char* fp = mmap(NULL, *buffSize, PROT_READ,
+                        MAP_PRIVATE, fildes, 0);
+        if(fp == MAP_FAILED){
+            if(errno == EINTR){
+                errno = 0;
+                continue;
+            }
+            perror("Cannot map file");
+        }
+        return fp;
+    }
+}
 
-		if (lineNumber < 0 || lineNumber > (N - 1) || (fileOffsets[lineNumber
-			+ 1] == 0)) {
-			fprintf (stderr, "wrong line number \n");
-			continue;
-		}
+bool fillIndentTable(IndentTable* table, char const*  buff){
+    char const* endLinePos = buff;
 
-		int w = -1;
-		while (w != lineLength[lineNumber]) {
-			w = write (STDOUT_FILENO, fileOffsets[lineNumber],
-					   lineLength[lineNumber]);
-			if (w == -1) {
-				if (errno == EAGAIN || errno == EINTR) {
-					continue;
-				} else {
-					w = lineLength[lineNumber];
-					fprintf (stderr, "Error write occurred\n");
-				}
-			}
-		}
-	}
+    while((endLinePos = strchr(endLinePos, '\n')) != NULL){
+        pushIndent(table, endLinePos - buff);
+        ++endLinePos;
+    }
+    return true;
+}
 
-	int w = -1;
-	while (w != fileSize) {
-		w = write (STDOUT_FILENO, p, fileSize);
-		if (w == -1) {
-			if (errno == EAGAIN || errno == EINTR) {
-				continue;
-			} else {
-				w = lineLength[lineNumber];
-				fprintf (stderr, "Error write occurred\n");
-			}
-		}
-	}
 
-	if (close (fileDescriptor) != 0) {
-		fprintf (stderr, "Cannot close file (descriptor=%d)\n",
-				 fileDescriptor);
-		munmap (p, fileSize);
-		exit (1);
-	}
-	munmap (p, fileSize);
-	exit (0);
+void destroyIndentTable(IndentTable* table){
+    if(table->arr != NULL){
+        free(table->arr);
+    }
+}
+
+void printLine(char const* buff, IndentTable* table, int lineNum){
+    --lineNum;
+    if(lineNum < 0 || lineNum >= table->size){
+        printf("No line with such number\n");
+        return;
+    }
+
+    size_t beginPos =  lineNum == 0
+                       ? 0
+                       : table->arr[lineNum-1] + 1; //+1 to get next pos after '\n'
+    size_t length = table->arr[lineNum] - beginPos + 1; //+1 to include '\n'
+
+    buff += beginPos;
+    char* line = malloc(sizeof(char)*length);
+    for(int i = 0; i < length; ++i){
+        line[i] = buff[i];
+    }
+    printf("%s", line);
+    free(line);
+}
+
+bool wait(){
+    fd_set rfds;
+    struct timeval tv;
+    int retval;
+    FD_ZERO(&rfds);
+    FD_SET(0, &rfds);
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    retval = select(1, &rfds, NULL, NULL, &tv);
+    if (retval){
+        return true;
+    }
+    printf("Five seconds passed..:(\n");
+    return false;
+}
+
+int main()
+{
+    int file = open("text.txt", O_RDONLY);
+
+    if(file == -1)
+    {
+        perror("Cannot open file\n");
+        return -1;
+    }
+
+    int bufferSize = 0;
+    char* buff = buffMmap(file, &bufferSize);
+    if(buff == NULL){
+        if(close(file) == -1){
+            perror("Cannot close file");
+        }
+        return 0;
+    }
+
+    if(close(file) == -1){
+        perror("Cannot close file\n");
+        if(munmap(buff, bufferSize) == -1){
+            perror("Cannot munmap file");
+        }
+        return -1;
+    }
+
+    IndentTable table;
+
+    if(!initIndentTable(&table)){
+        perror("Error in initialization indent table");
+        if(munmap(buff, bufferSize) == -1){
+            perror("Cannot munmap file");
+        }
+        return -1;
+    }
+    if(!fillIndentTable(&table, buff)){
+        destroyIndentTable(&table);
+        if(munmap(buff, bufferSize) == -1){
+            perror("Cannot munmap file");
+        }
+        perror("Error in filling indent table");
+        return -1;
+    }
+
+    size_t lineNum;
+    while(1)
+    {
+        printf("Type line num to read. Type 0 to exit: \n");
+
+        if(wait()){
+            scanf("%zd", &lineNum);
+            if(lineNum != 0){
+                printLine(buff, &table, lineNum);
+            }
+        }
+        if(lineNum == 0){
+            break;
+        }
+    }
+
+    destroyIndentTable(&table);
+    if(munmap(buff, bufferSize) == -1){
+        perror("Cannot munmap file");
+        return -1;
+    }
+    return 0;
 }
