@@ -75,7 +75,7 @@ void printLine(int fildes, IndentTable* table, int lineNum){
                        : table->arr[lineNum-1] + 1; //+1 to get next pos after '\n'
     size_t length = table->arr[lineNum] - beginPos + 1; //+1 to include '\n'
 
-    char* line = calloc(length + 1, sizeof(char))
+    char* line = calloc(length + 1, sizeof(char));
     if(line == NULL){
         perror("Cannot allocate memory to printLine buffer\n");
         return;
